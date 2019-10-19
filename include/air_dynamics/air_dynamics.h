@@ -1,6 +1,7 @@
 #pragma once
 #include <ros/ros.h>
 #include "utils/xform.h"
+#include "wind-dynamics/dryden_model.h"
 #include <geometry_msgs/TransformStamped.h>
 #include <geometry_msgs/Wrench.h>
 #include <geometry_msgs/Point.h>
@@ -24,29 +25,34 @@ public:
 
 private:
     void onUpdate(const ros::TimerEvent &event);
-    void getWindVelocities();
-    void drawArrow();
     void resetWrench();
     void uavStateCallback(const rosflight_msgs::ROSflightSimState &msg);
 
-    std::default_random_engine random_generator_;
-    std::normal_distribution<double> w_gust_dist_;
+//    std::default_random_engine random_generator_;
+//    std::normal_distribution<double> w_gust_dist_;
 
-    double Va_;
-    double sigma_u_;
-    double sigma_v_;
-    double sigma_w_;
-    double L_u_;
-    double L_v_;
-    double L_w_;
+//    double Va_;
+//    double sigma_u_;
+//    double sigma_v_;
+//    double sigma_w_;
+//    double L_u_;
+//    double L_v_;
+//    double L_w_;
 
-    Vector3d air_v_;
-    Vector3d uav_v_;
-    Vector3d uav_w_;
+    dryden_model::DrydenWind wind_model_;
+    double prev_time_;
+
+//    Vector3d air_v_NED;
+    Vector3d uav_v_UAV_;
+    Vector3d uav_w_UAV_;
+    Quatd q_NED_UAV_;
+    double linear_mu_;
+    double angular_mu_;
 
     Vector3d Force_;
     Vector3d Torque_;
     geometry_msgs::Wrench wrench_;
+    visualization_msgs::Marker marker_;
 
     ros::Subscriber uav_state_sub_;
     ros::Publisher wrench_pub_;
