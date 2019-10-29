@@ -223,7 +223,7 @@ void AirDynamics::onUpdate(const ros::TimerEvent &event)
 
       // Then, Calculate Actual force and torque for each rotor using first-order dynamics
       double tau = (desired_forces_(i,0) > actual_forces_(i,0)) ? motors_[i].rotor.tau_up : motors_[i].rotor.tau_down;
-      double alpha = dt/(tau + dt);
+      double alpha = time/(tau + time);
       actual_forces_(i,0) = sat((1-alpha)*actual_forces_(i) + alpha*desired_forces_(i), motors_[i].rotor.max, 0.0);
       actual_torques_(i,0) = sat((1-alpha)*actual_torques_(i) + alpha*desired_torques_(i), motors_[i].rotor.max, 0.0);
       motor_speeds_(i, 0) = sqrt(abs(actual_forces_(i) / motor_kT_));
@@ -247,29 +247,32 @@ void AirDynamics::onUpdate(const ros::TimerEvent &event)
 
     /// Calculate external aerodynamic forces
 
-//    // Linear and angular drag forces
-//    Force_ += -linear_mu_ * airspeed_UAV;
-//    Torque_ += -angular_mu_ * uav_w_UAV_.cwiseProduct(uav_w_UAV_);
+    // Linear and angular drag forces
+    Force_ += -linear_mu_ * airspeed_UAV;
+    Torque_ += -angular_mu_ * uav_w_UAV_.cwiseProduct(uav_w_UAV_);
 
-//    // Blade flapping effect
-//    for (int i = 0; i < num_rotors_; i++)
-//    {
-//        // determine allocation of k_1 to each motor and calculate force and torques
-//        double k1i = motor_k1_ * motor_speeds_(i, 0) / omega_Total;
+    // Blade flapping effect
+    if (omega_Total > 0.0)
+    {
+        for (int i = 0; i < num_rotors_; i++)
+        {
+            // determine allocation of k_1 to each motor and calculate force and torques
+            double k1i = motor_k1_ * motor_speeds_(i, 0) / omega_Total;
 
-//        // Calculate forces
-//        Force_ -= k1i * (Matrix3d::Identity() - motors_[i].normal*motors_[i].normal.transpose()) * airspeed_UAV;
+            // Calculate forces
+            Force_ -= k1i * (Matrix3d::Identity() - motors_[i].normal*motors_[i].normal.transpose()) * airspeed_UAV;
 
-//        // Calculate torque about roll axis
-//        double as1phi = -motor_kf_ * airspeed_UAV(1);
-//        Torque_(0) -= actual_forces_(i) * motors_[i].position(2) * sin(as1phi);
-//        Torque_(0) += motor_kB_ * as1phi;
+            // Calculate torque about roll axis
+            double as1phi = -motor_kf_ * airspeed_UAV(1);
+            Torque_(0) -= actual_forces_(i) * motors_[i].position(2) * sin(as1phi);
+            Torque_(0) += motor_kB_ * as1phi;
 
-//        // Calcualte torque about pitch axis
-//        double as1theta = motor_kf_ * airspeed_UAV(0);
-//        Torque_(0) -= actual_forces_(i) * motors_[i].position(2) * sin(as1theta);
-//        Torque_(0) += motor_kB_ * as1theta;
-//    }
+            // Calcualte torque about pitch axis
+            double as1theta = motor_kf_ * airspeed_UAV(0);
+            Torque_(0) -= actual_forces_(i) * motors_[i].position(2) * sin(as1theta);
+            Torque_(0) += motor_kB_ * as1theta;
+        }
+    }
 
     // Publish aerodynamic wrench
     wrench_.force.x = Force_.x();
