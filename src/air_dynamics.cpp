@@ -208,6 +208,7 @@ void AirDynamics::onUpdate(const ros::TimerEvent &event)
     double dt = time - prev_time_;
     prev_time_ = time;
     Vector3d air_v_NED = wind_model_.getWind(dt);
+//    std::cout << air_v_NED.transpose() << std::endl;
     Vector3d air_v_UAV = q_NED_UAV_.rotp(air_v_NED);
     Vector3d airspeed_UAV = uav_v_UAV_ - air_v_UAV;
 
