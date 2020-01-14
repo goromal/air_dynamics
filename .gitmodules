@@ -1,6 +1,1 @@
-[submodule "lib/utils"]
-	path = lib/utils
-	url = https://github.com/goromal/utils.git
-[submodule "lib/wind-dynamics"]
-	path = lib/wind-dynamics
-	url = https://github.com/goromal/wind-dynamics.git
+

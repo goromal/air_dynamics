@@ -1,7 +1,7 @@
 #pragma once
 #include <ros/ros.h>
 #include "utils/xform.h"
-#include "wind-dynamics/dryden_model.h"
+#include "dryden_model.h"
 #include <geometry_msgs/TransformStamped.h>
 #include <geometry_msgs/Wrench.h>
 #include <geometry_msgs/Point.h>
