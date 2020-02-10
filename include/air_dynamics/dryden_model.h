@@ -4,8 +4,6 @@
 #include <random>
 #include <chrono>
 
-//#include <iostream>
-
 using namespace modeling;
 
 namespace dryden_model {

@@ -1,8 +1,10 @@
 #include "air_dynamics/air_dynamics.h"
 
+#define TO_ULONG(i) static_cast<unsigned long>(i)
+
 namespace air_dynamics {
 
-AirDynamics::AirDynamics() : nh_()
+AirDynamics::AirDynamics() : nh_(), nh_private_("~")
 {
     uav_state_sub_ = nh_.subscribe("uav_truth_NED", 1, &AirDynamics::uavStateCallback, this);
     motor_pwm_sub_ = nh_.subscribe("uav_motor_pwm", 1, &AirDynamics::uavMotorPWMCallback, this);
@@ -10,135 +12,84 @@ AirDynamics::AirDynamics() : nh_()
     wrench_pub_ = nh_.advertise<geometry_msgs::Wrench>("uav_ext_wrench", 1);
     marker_pub_ = nh_.advertise<visualization_msgs::Marker>("wind_marker", 1);
 
-    motor_k1_ = nh_.param<double>("motor_k_1", 0.57);
-    motor_kB_ = nh_.param<double>("motor_k_beta", 0.7);
-    motor_kT_ = nh_.param<double>("motor_k_T", 2.0e-5);
-    motor_kf_ = nh_.param<double>("motor_k_f", 0.0);
+//    motor_k1_ = nh_private_.param<double>("motor/k_1", 0.57);
+//    motor_kB_ = nh_private_.param<double>("motor/k_beta", 0.7);
+//    motor_kT_ = nh_private_.param<double>("motor/kn", 2.0e-5);
+//    motor_kf_ = nh_private_.param<double>("motor/k_f", 0.0);
+
+    ROS_ASSERT(nh_private_.getParam("k_1", motor_k1_));
+    ROS_ASSERT(nh_private_.getParam("k_beta", motor_kB_));
+    ROS_ASSERT(nh_private_.getParam("k_f", motor_kf_));
+    ROS_ASSERT(nh_private_.getParam("num_rotors", num_rotors_));
+
+    motor_kns_ = std::vector<double>(TO_ULONG(num_rotors_));
+    ROS_ASSERT(nh_private_.getParam("kn", motor_kns_));
 
     memset(&pwm_outputs_, 0, sizeof(pwm_outputs_));
-    num_rotors_ = 0;
 
-    if (nh_.hasParam("ground_effect"))
-    {
-      nh_.getParam("ground_effect", ground_effect_);
-    }
-    else
-    {
-      ground_effect_.push_back(-55.3516);
-      ground_effect_.push_back(181.8265);
-      ground_effect_.push_back(-203.9874);
-      ground_effect_.push_back(85.3735);
-      ground_effect_.push_back(-7.6619);
-    }
-    uav_mass_ = nh_.param<double>("uav_mass", 2.0);
-    num_rotors_ = nh_.param<int>("num_rotors", 4);
+    uav_mass_ = nh_private_.param<double>("mass", 2.0);
 
     std::vector<double> rotor_positions; //(3 * num_rotors_);
     std::vector<double> rotor_vector_normal; //(3 * num_rotors_);
     std::vector<int> rotor_rotation_directions; //(num_rotors_);
 
-    // For now, just assume all rotors are the same
-    Rotor rotor;
+    // No longer assuming that rotors are the same
+    std::vector<Rotor> rotors(TO_ULONG(num_rotors_));
 
-    if (nh_.hasParam("rotor_positions"))
+    ROS_ASSERT(nh_private_.getParam("rotor_positions", rotor_positions));
+    ROS_ASSERT(nh_private_.getParam("rotor_vector_normal", rotor_vector_normal));
+    ROS_ASSERT(nh_private_.getParam("rotor_rotation_directions", rotor_rotation_directions));
+
+    double rotor_max = nh_private_.param<double>("rotor_max_thrust", 20.0);
+    double tau_up = nh_private_.param<double>("rotor_tau_up", 0.2164);
+    double tau_down = nh_private_.param<double>("rotor_tau_down", 0.1644);
+
+    std::vector<double> F_poly_set(TO_ULONG(3*num_rotors_));
+    std::vector<double> T_poly_set(TO_ULONG(3*num_rotors_));
+    ROS_ASSERT(nh_private_.getParam("thrust_poly", F_poly_set));
+    ROS_ASSERT(nh_private_.getParam("torque_poly", T_poly_set));
+
+    for (int i = 0; i < num_rotors_; i++)
     {
-      nh_.getParam("rotor_positions", rotor_positions);
+        rotors[TO_ULONG(i)].max = rotor_max;
+        rotors[TO_ULONG(i)].F_poly =
+            {F_poly_set[TO_ULONG(3*i+0)],
+             F_poly_set[TO_ULONG(3*i+1)],
+             F_poly_set[TO_ULONG(3*i+2)]};
+        rotors[TO_ULONG(i)].T_poly =
+            {T_poly_set[TO_ULONG(3*i+0)],
+             T_poly_set[TO_ULONG(3*i+1)],
+             T_poly_set[TO_ULONG(3*i+2)]};
+        rotors[TO_ULONG(i)].tau_up = tau_up;
+        rotors[TO_ULONG(i)].tau_down = tau_down;
     }
-    else
-    {
-      rotor_positions.push_back(0.1926);
-      rotor_positions.push_back(0.230);
-      rotor_positions.push_back(-0.0762);
-      rotor_positions.push_back(-0.1907);
-      rotor_positions.push_back(0.205);
-      rotor_positions.push_back(-0.0762);
-      rotor_positions.push_back(-0.1907);
-      rotor_positions.push_back(-0.205);
-      rotor_positions.push_back(-0.0762);
-      rotor_positions.push_back(0.1926);
-      rotor_positions.push_back(-0.230);
-      rotor_positions.push_back(-0.0762);
-    }
-    if (nh_.hasParam("rotor_vector_normal"))
-    {
-      nh_.getParam("rotor_vector_normal", rotor_vector_normal);
-    }
-    else
-    {
-      rotor_vector_normal.push_back(-0.02674078);
-      rotor_vector_normal.push_back(0.0223925);
-      rotor_vector_normal.push_back(-0.99939157);
-      rotor_vector_normal.push_back(0.02553726);
-      rotor_vector_normal.push_back(0.02375588);
-      rotor_vector_normal.push_back(-0.99939157);
-      rotor_vector_normal.push_back(0.02553726);
-      rotor_vector_normal.push_back(-0.02375588);
-      rotor_vector_normal.push_back(-0.99939157);
-      rotor_vector_normal.push_back(-0.02674078);
-      rotor_vector_normal.push_back(-0.0223925);
-      rotor_vector_normal.push_back(-0.99939157);
-    }
-    if (nh_.hasParam("rotor_rotation_directions"))
-    {
-      nh_.getParam("rotor_rotation_directions", rotor_rotation_directions);
-    }
-    else
-    {
-      rotor_rotation_directions.push_back(-1);
-      rotor_rotation_directions.push_back(1);
-      rotor_rotation_directions.push_back(-1);
-      rotor_rotation_directions.push_back(1);
-    }
-    rotor.max = nh_.param<double>("rotor_max_thrust", 14.961);
-    if (nh_.hasParam("rotor_F"))
-    {
-      nh_.getParam("rotor_F", rotor.F_poly);
-    }
-    else
-    {
-      rotor.F_poly.push_back(0.000015);
-      rotor.F_poly.push_back(-0.024451);
-      rotor.F_poly.push_back(9.00225);
-    }
-    if (nh_.hasParam("rotor_T"))
-    {
-      nh_.getParam("rotor_T", rotor.T_poly);
-    }
-    else
-    {
-      rotor.T_poly.push_back(0.000000222);
-      rotor.T_poly.push_back(-0.000351);
-      rotor.T_poly.push_back(0.12531);
-    }
-    rotor.tau_up = nh_.param<double>("rotor_tau_up", 0.2164);
-    rotor.tau_down = nh_.param<double>("rotor_tau_down", 0.1644);
 
     /* Load Rotor Configuration */
-    motors_.resize(num_rotors_);
+    motors_= std::vector<Motor>(TO_ULONG(num_rotors_));
 
     force_allocation_matrix_.resize(4,num_rotors_);
     torque_allocation_matrix_.resize(4,num_rotors_);
     for(int i = 0; i < num_rotors_; i++)
     {
-      motors_[i].rotor = rotor;
-      motors_[i].position.resize(3);
-      motors_[i].normal.resize(3);
+      motors_[TO_ULONG(i)].rotor = rotors[TO_ULONG(i)];
+      motors_[TO_ULONG(i)].position.resize(3);
+      motors_[TO_ULONG(i)].normal.resize(3);
       for (int j = 0; j < 3; j++)
       {
-        motors_[i].position(j) = rotor_positions[3*i + j];
-        motors_[i].normal(j) = rotor_vector_normal[3*i + j];
+        motors_[TO_ULONG(i)].position(j) = rotor_positions[TO_ULONG(3*i + j)];
+        motors_[TO_ULONG(i)].normal(j) = rotor_vector_normal[TO_ULONG(3*i + j)];
       }
-      motors_[i].normal.normalize();
-      motors_[i].direction = rotor_rotation_directions[i];
+      motors_[TO_ULONG(i)].normal.normalize();
+      motors_[TO_ULONG(i)].direction = rotor_rotation_directions[TO_ULONG(i)];
 
-      Eigen::Vector3d moment_from_thrust = motors_[i].position.cross(motors_[i].normal);
-      Eigen::Vector3d moment_from_torque = motors_[i].direction * motors_[i].normal;
+      Eigen::Vector3d moment_from_thrust = motors_[TO_ULONG(i)].position.cross(motors_[TO_ULONG(i)].normal);
+      Eigen::Vector3d moment_from_torque = motors_[TO_ULONG(i)].direction * motors_[TO_ULONG(i)].normal;
 
       // build allocation_matrices
       force_allocation_matrix_(0,i) = moment_from_thrust(0); // l
       force_allocation_matrix_(1,i) = moment_from_thrust(1); // m
       force_allocation_matrix_(2,i) = moment_from_thrust(2); // n
-      force_allocation_matrix_(3,i) = motors_[i].normal(2); // F
+      force_allocation_matrix_(3,i) = motors_[TO_ULONG(i)].normal(2); // F
 
       torque_allocation_matrix_(0,i) = moment_from_torque(0); // l
       torque_allocation_matrix_(1,i) = moment_from_torque(1); // m
@@ -162,15 +113,15 @@ AirDynamics::AirDynamics() : nh_()
       actual_torques_(i)=0.0;
     }
 
-    double w_x_mean  = nh_.param<double>("wind_x_mean", 0.0);
-    double w_x_bound = nh_.param<double>("wind_x_bound", 0.5);
-    double w_y_mean  = nh_.param<double>("wind_y_mean", 0.0);
-    double w_y_bound = nh_.param<double>("wind_y_bound", 0.5);
-    double w_z_mean  = nh_.param<double>("wind_z_mean", 0.0);
-    double w_z_bound = nh_.param<double>("wind_z_bound", 0.1);
-    linear_mu_ = nh_.param<double>("uav_linear_mu", 0.05);
-    angular_mu_ = nh_.param<double>("uav_angular_mu", 0.0005);
-    std::string wind_frame = nh_.param<std::string>("wind_vis_frame", "boat");
+    double w_x_mean  = nh_private_.param<double>("wind_x_mean", 0.0);
+    double w_x_bound = nh_private_.param<double>("wind_x_bound", 0.5);
+    double w_y_mean  = nh_private_.param<double>("wind_y_mean", 0.0);
+    double w_y_bound = nh_private_.param<double>("wind_y_bound", 0.5);
+    double w_z_mean  = nh_private_.param<double>("wind_z_mean", 0.0);
+    double w_z_bound = nh_private_.param<double>("wind_z_bound", 0.1);
+    linear_mu_ = nh_private_.param<double>("linear_mu", 0.05);
+    angular_mu_ = nh_private_.param<double>("angular_mu", 0.0005);
+    std::string wind_frame = nh_private_.param<std::string>("wind_vis_frame", "boat");
 
     uav_v_UAV_.setZero();
     uav_w_UAV_.setZero();
@@ -219,15 +170,19 @@ void AirDynamics::onUpdate(const ros::TimerEvent &event)
     {
       // First, figure out the desired force output from passing the signal into the quadratic approximation
       double signal = pwm_outputs_[i];
-      desired_forces_(i,0) = motors_[i].rotor.F_poly[0]*signal*signal + motors_[i].rotor.F_poly[1]*signal + motors_[i].rotor.F_poly[2];
-      desired_torques_(i,0) = motors_[i].rotor.T_poly[0]*signal*signal + motors_[i].rotor.T_poly[1]*signal + motors_[i].rotor.T_poly[2];
+      desired_forces_(i,0) = motors_[TO_ULONG(i)].rotor.F_poly[0]*signal*signal +
+                             motors_[TO_ULONG(i)].rotor.F_poly[1]*signal +
+                             motors_[TO_ULONG(i)].rotor.F_poly[2];
+      desired_torques_(i,0) = motors_[TO_ULONG(i)].rotor.T_poly[0]*signal*signal +
+                              motors_[TO_ULONG(i)].rotor.T_poly[1]*signal +
+                              motors_[TO_ULONG(i)].rotor.T_poly[2];
 
       // Then, Calculate Actual force and torque for each rotor using first-order dynamics
-      double tau = (desired_forces_(i,0) > actual_forces_(i,0)) ? motors_[i].rotor.tau_up : motors_[i].rotor.tau_down;
+      double tau = (desired_forces_(i,0) > actual_forces_(i,0)) ? motors_[TO_ULONG(i)].rotor.tau_up : motors_[TO_ULONG(i)].rotor.tau_down;
       double alpha = time/(tau + time);
-      actual_forces_(i,0) = sat((1-alpha)*actual_forces_(i) + alpha*desired_forces_(i), motors_[i].rotor.max, 0.0);
-      actual_torques_(i,0) = sat((1-alpha)*actual_torques_(i) + alpha*desired_torques_(i), motors_[i].rotor.max, 0.0);
-      motor_speeds_(i, 0) = sqrt(abs(actual_forces_(i) / motor_kT_));
+      actual_forces_(i,0) = sat((1-alpha)*actual_forces_(i) + alpha*desired_forces_(i), motors_[TO_ULONG(i)].rotor.max, 0.0);
+      actual_torques_(i,0) = sat((1-alpha)*actual_torques_(i) + alpha*desired_torques_(i), motors_[TO_ULONG(i)].rotor.max, 0.0);
+      motor_speeds_(i, 0) = sqrt(abs(actual_forces_(i) / motor_kns_[TO_ULONG(i)]));
       omega_Total += motor_speeds_(i, 0);
     }
 
@@ -261,16 +216,16 @@ void AirDynamics::onUpdate(const ros::TimerEvent &event)
             double k1i = motor_k1_ * motor_speeds_(i, 0) / omega_Total;
 
             // Calculate forces
-            Force_ -= k1i * (Matrix3d::Identity() - motors_[i].normal*motors_[i].normal.transpose()) * airspeed_UAV;
+            Force_ -= k1i * (Matrix3d::Identity() - motors_[TO_ULONG(i)].normal*motors_[TO_ULONG(i)].normal.transpose()) * airspeed_UAV;
 
             // Calculate torque about roll axis
             double as1phi = -motor_kf_ * airspeed_UAV(1);
-            Torque_(0) -= actual_forces_(i) * motors_[i].position(2) * sin(as1phi);
+            Torque_(0) -= actual_forces_(i) * motors_[TO_ULONG(i)].position(2) * sin(as1phi);
             Torque_(0) += motor_kB_ * as1phi;
 
             // Calcualte torque about pitch axis
             double as1theta = motor_kf_ * airspeed_UAV(0);
-            Torque_(0) -= actual_forces_(i) * motors_[i].position(2) * sin(as1theta);
+            Torque_(0) -= actual_forces_(i) * motors_[TO_ULONG(i)].position(2) * sin(as1theta);
             Torque_(0) += motor_kB_ * as1theta;
         }
     }
@@ -298,7 +253,7 @@ void AirDynamics::onUpdate(const ros::TimerEvent &event)
     }
 }
 
-void AirDynamics::uavStateCallback(const rosflight_msgs::ROSflightSimState &msg)
+void AirDynamics::uavStateCallback(const rosflight_sil::ROSflightSimState &msg)
 {
     uav_v_UAV_ = Vector3d(msg.vel.x, msg.vel.y, msg.vel.z);
     uav_w_UAV_ = Vector3d(msg.w.x, msg.w.y, msg.w.z);

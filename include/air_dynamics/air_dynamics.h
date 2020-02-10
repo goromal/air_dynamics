@@ -1,12 +1,12 @@
 #pragma once
 #include <ros/ros.h>
-#include "utils/xform.h"
+#include "geometry-utils-lib/xform.h"
 #include "dryden_model.h"
 #include <geometry_msgs/TransformStamped.h>
 #include <geometry_msgs/Wrench.h>
 #include <geometry_msgs/Point.h>
 #include <visualization_msgs/Marker.h>
-#include <rosflight_msgs/ROSflightSimState.h>
+#include "rosflight_sil/ROSflightSimState.h"
 #include <std_msgs/Int32MultiArray.h>
 #include <Eigen/Core>
 #include <random>
@@ -27,7 +27,7 @@ public:
 private:
     void onUpdate(const ros::TimerEvent &event);
     void resetWrenches();
-    void uavStateCallback(const rosflight_msgs::ROSflightSimState &msg);
+    void uavStateCallback(const rosflight_sil::ROSflightSimState &msg);
     void uavMotorPWMCallback(const std_msgs::Int32MultiArray &msg);
 
     double sat(double x, double max, double min)
@@ -82,7 +82,6 @@ private:
     Eigen::MatrixXd rotor_position_;
     Eigen::MatrixXd rotor_plane_normal_;
     Eigen::VectorXd rotor_rotation_direction_;
-    std::vector<double> ground_effect_;
     Eigen::MatrixXd force_allocation_matrix_;
     Eigen::MatrixXd torque_allocation_matrix_;
     Eigen::VectorXd desired_forces_;
@@ -91,7 +90,7 @@ private:
     Eigen::VectorXd actual_torques_;
 
     double motor_k1_;
-    double motor_kT_;
+    std::vector<double> motor_kns_;
     double motor_kB_;
     double motor_kf_;
     Vector4d motor_speeds_;
@@ -122,6 +121,7 @@ private:
     ros::Publisher marker_pub_;
 
     ros::NodeHandle nh_;
+    ros::NodeHandle nh_private_;
     ros::Timer timer_;
 };
 

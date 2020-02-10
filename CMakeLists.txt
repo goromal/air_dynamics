@@ -8,7 +8,7 @@ find_package(catkin REQUIRED COMPONENTS
   rospy
   geometry_msgs
   visualization_msgs
-  rosflight_msgs
+  rosflight_sil
   aerowake_utils
 )
 
@@ -17,11 +17,15 @@ find_package(Eigen3 REQUIRED)
 catkin_package(
   INCLUDE_DIRS include ${EIGEN3_INCLUDE_DIRS}
   CATKIN_DEPENDS roscpp rospy geometry_msgs visualization_msgs
-    rosflight_msgs aerowake_utils
+    rosflight_sil aerowake_utils
   DEPENDS EIGEN3
 )
 
-include_directories(${EIGEN3_INCLUDE_DIR})
+include_directories(
+  include
+  ${EIGEN3_INCLUDE_DIR}
+  ${catkin_INCLUDE_DIRS}
+)
 
 add_executable(air_dynamics_node
   src/air_dynamics_node.cpp
@@ -34,12 +38,3 @@ target_link_libraries(air_dynamics_node
   aerowake-utils-lib
   ${catkin_LIBRARIES}
 )
-
-# cs_add_executable(air_dynamics_node
-#   src/air_dynamics_node.cpp
-#   src/air_dynamics.cpp
-# )
-# target_link_libraries(air_dynamics_node wind-dynamics utils ${catkin_LIBRARIES})
-#
-# cs_install()
-# cs_export()
