@@ -1,5 +1,6 @@
 #pragma once
 #include <ros/ros.h>
+#include <algorithm>
 #include "geometry-utils-lib/xform.h"
 #include "dryden_model.h"
 #include <geometry_msgs/TransformStamped.h>

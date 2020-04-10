@@ -25,7 +25,8 @@ AirDynamics::AirDynamics() : nh_(), nh_private_("~")
     motor_kns_ = std::vector<double>(TO_ULONG(num_rotors_));
     ROS_ASSERT(nh_private_.getParam("kn", motor_kns_));
 
-    memset(&pwm_outputs_, 0, sizeof(pwm_outputs_));
+    for (int i = 0; i < 14; i++)
+        pwm_outputs_[i] = 1000;
 
     uav_mass_ = nh_private_.param<double>("mass", 2.0);
 
@@ -140,8 +141,8 @@ AirDynamics::AirDynamics() : nh_(), nh_private_("~")
     marker_.scale.y = arrow_scale;
     marker_.scale.z = arrow_scale;
     marker_.color.r = 0.0;
-    marker_.color.g = 1.0;
-    marker_.color.b = 1.0;
+    marker_.color.g = 0.0;
+    marker_.color.b = 0.0;
     marker_.color.a = 1.0;
 
     wind_model_.initialize(w_x_mean, w_y_mean, w_z_mean, w_x_bound, w_y_bound, w_z_bound);
@@ -159,17 +160,15 @@ void AirDynamics::onUpdate(const ros::TimerEvent &event)
     double dt = time - prev_time_;
     prev_time_ = time;
     Vector3d air_v_NED = wind_model_.getWind(dt);
-//    std::cout << air_v_NED.transpose() << std::endl;
     Vector3d air_v_UAV = q_NED_UAV_.rotp(air_v_NED);
     Vector3d airspeed_UAV = uav_v_UAV_ - air_v_UAV;
 
     /// Calculate motor forces
     double omega_Total = 0.0;
-//    std::cout << "RECEIVED: " << pwm_outputs_[0] << " " << pwm_outputs_[1] << " " << pwm_outputs_[2] << " " << pwm_outputs_[3] << std::endl; // ----
     for (int i = 0; i < num_rotors_; i++)
     {
       // First, figure out the desired force output from passing the signal into the quadratic approximation
-      double signal = pwm_outputs_[i];
+      double signal = pwm_outputs_[i]; // std::min(1000,pwm_outputs_[i]);
       desired_forces_(i,0) = motors_[TO_ULONG(i)].rotor.F_poly[0]*signal*signal +
                              motors_[TO_ULONG(i)].rotor.F_poly[1]*signal +
                              motors_[TO_ULONG(i)].rotor.F_poly[2];
